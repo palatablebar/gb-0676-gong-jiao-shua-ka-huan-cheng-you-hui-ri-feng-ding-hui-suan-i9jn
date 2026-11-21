@@ -20,6 +20,11 @@ docker compose exec -T app pytest -q
 - 5. 优惠回算：`/discounts`，`/api/discounts`。
 - 6. 清分对账：`/clearing`，`/api/clearing`。
 - 7. 日结归档：`/settlement`，`/api/settlement`。
+- 历史批次复算与差异归因：`/recalc`，`/api/batches`（裁决见 `docs/RECALC-RULING.md`）。
+
+## 历史批次复算原则
+
+原账按**乘车发生时规则原样重现**并冻结为证据；复算账按**当前规则重出且保留原账**。差异沿同一来源逐行归因为补录/纠错（DATA）、规则变化（RULE）或两者兼有（MIXED）。每个业务批次只保留一个当前生效结论，规则变化全程可追溯；同一批重试不新增版本，来源未对平不得封存，原始输入与规则依据留档防断链。
 
 ## 核心规则
 
@@ -34,9 +39,9 @@ docker compose exec -T app pytest -q
 
 ## 输入与输出
 
-输入列见 `docs/DATA-DICTIONARY.md`。项目包含dirty.csv、clean.csv、legacy.csv，统一走实际导入路径。上传限制4MB，拒绝不带时区的时间。业务键按字符串保留，Decimal参与计算，空值不会当零。
+输入列见 `docs/DATA-DICTIONARY.md`。项目包含dirty.csv、clean.csv、legacy.csv、month_legacy.csv、month_corrected.csv，统一走实际导入路径。上传限制4MB，拒绝不带时区的时间。业务键按字符串保留，Decimal参与计算，空值不会当零。
 
-`POST /api/runs` 接收sample或csv；`GET /api/runs`返回历史批次；`POST /api/runs/<id>/review`需要version与decision；`GET /api/runs/<id>/archive`返回唯一证据导出。
+`POST /api/runs` 接收sample或csv；`GET /api/runs`返回历史批次；`POST /api/runs/<id>/review`需要version与decision；`GET /api/runs/<id>/archive`返回唯一证据导出。批次复算走`POST /api/batches/<ref>/recalc`、`GET /api/batches/<ref>/compare`、`/switch`、`/seal`、`/verify`，详见`docs/API.md`。
 
 ## 范围
 

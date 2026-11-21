@@ -1,5 +1,5 @@
 from flask import render_template
-from app.config import MODULES,TITLE,SHORT
+from app.config import MODULES,TITLE,SHORT,RULE_VERSION
 from app.pipeline import execute,load_sample
 from app import store
 def register_pages(app):
@@ -15,3 +15,10 @@ def register_pages(app):
     app.add_url_rule("/",view_func=lambda:page(4))
     for index,(slug,name) in enumerate(MODULES):
         app.add_url_rule("/"+slug,endpoint="page_"+slug,view_func=lambda index=index:page(index))
+
+    def recalc_page():
+        return render_template(
+            "recalc.html", title=TITLE, short=SHORT, modules=MODULES,
+            index=99, batches=store.list_batches(), current_rule=RULE_VERSION,
+        )
+    app.add_url_rule("/recalc", endpoint="page_recalc", view_func=recalc_page)

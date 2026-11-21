@@ -13,6 +13,7 @@
 | M5 优惠回算 | 查看并运行优惠回算 | `/api/discounts` | `app/modules/m5_discounts/rules.py` | `tests/test_m5.py` |
 | M6 清分对账 | 查看并运行清分对账 | `/api/clearing` | `app/modules/m6_clearing/rules.py` | `tests/test_m6.py` |
 | M7 日结归档 | 查看并运行日结归档 | `/api/settlement` | `app/modules/m7_settlement/rules.py` | `tests/test_m7.py` |
+| 历史批次复算 | 原账重现、当前规则重出、差异归因、版本切换与封存 | `/api/batches`、`/recalc` | `app/rule_registry.py`、`app/attribution.py`、`app/store.py` | `tests/test_recalc.py` |
 
 ## 陷阱登记
 
@@ -31,10 +32,17 @@
 | TRAP-11 | 混合偏移 | 落错版本 | UTC归整 | `app/values.py` | `tests/test_m3.py::test_timezone_equal` |
 | TRAP-23 | 换乘截止点 | 重复优惠 | 截止点排除 | `app/modules/m5_discounts/rules.py` | `tests/test_m5.py::test_exact_window_excluded` |
 | TRAP-25 | 票价重叠 | 随意取版 | 冲突隔离 | `app/modules/m3_fares/rules.py` | `tests/test_m3.py::test_overlap_rejected` |
+| TRAP-30 | 新旧规则混淆 | 一套当前结果无法区分差异来源 | 规则登记簿按生效窗冻结，as_of原样重现/current重出，逐行归因DATA/RULE/MIXED | `app/rule_registry.py`、`app/attribution.py` | `tests/test_recalc.py` |
+| TRAP-31 | 重试产生冗余版本 | 同批重跑版本膨胀 | attempt_id（输入+规则+参数指纹）唯一，重复提交复用原版本 | `app/store.py` | `tests/test_recalc.py::test_retry_same_attempt_adds_no_version` |
+| TRAP-32 | 切换覆盖旧版 | 旧结论丢失不可读 | 只改批次头指针，旧版完整payload保留，乐观锁409 | `app/store.py` | `tests/test_recalc.py::test_stale_switch_rejected_but_old_version_remains_readable` |
+| TRAP-33 | 未对平即封存 | 日结带着差额封存 | seal校验balanced，未对平422 | `app/store.py` | `tests/test_recalc.py::test_unbalanced_batch_cannot_be_sealed` |
+| TRAP-34 | 留档被篡改/断链 | 复算链静默失真 | 哈希链+输入摘要+规则指纹，/verify重算校验，无删除接口 | `app/store.py`、`app/archive.py` | `tests/test_recalc.py::test_chain_verification_detects_tampering` |
 
 ## 对账规则
 
 输入原始逻辑行=最终采纳来源行+隔离来源行+重复行+空白行+分段表头。派生记录用_sources保存完整来源，因此分组不丢行。业务预期合计与上游申报合计之差等于逐行差异之和。结果按输入摘要、规则版本及参数产生唯一批次，事务写入；同源重跑只复用已有批次。
+
+历史批次以 `batch_ref` 归并为一条只追加账本：原账按乘车时规则（as_of）冻结，复算账按当前规则（current）重出并保留原账；`attempt_id` 为输入+规则+参数指纹，同批重试不新增版本。批次头 `current_run_id` 是唯一当前生效结论，切换只动指针、不删旧版；封存要求当前版本对平，封存后只读。每版经 `chain_hash=sha256(prev_hash||payload)` 串成哈希链，原始输入与规则依据随清单留档，`/verify` 可重算验链。
 
 ## 已知不覆盖
 

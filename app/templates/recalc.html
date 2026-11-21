@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>历史批次复算 · {{title}}</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/layout.css">
+  <link rel="stylesheet" href="/static/components.css">
+  <link rel="stylesheet" href="/static/recalc.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">换乘清分<span class="meta"> / TC</span></div>
+    <nav>
+      {% for slug,name in modules %}<a href="/{{slug}}">{{'%02d'|format(loop.index)}}　{{name}}</a>{% endfor %}
+      <a class="nav-recalc active" href="/recalc">⟳　历史批次复算</a>
+    </nav>
+    <div class="footnote">原账原样重现<br>当前规则重出留痕</div>
+  </aside>
+
+  <div class="work">
+    <header class="topbar">
+      <h1>历史批次复算与差异归因</h1>
+      <span class="meta" id="rule-current">当前规则 {{current_rule}}</span>
+    </header>
+
+    <main class="content">
+      <section class="panel">
+        <div class="panel__head"><h2>裁决原则</h2><span class="tag">唯一当前生效结论</span></div>
+        <div class="panel__body ruling">
+          <p><b>原账按乘车发生时规则原样重现</b>，作为不可改写的历史证据冻结；<b>复算账按当前规则重出并保留原账</b>。差异逐行归因到「补录/数据纠错」或「规则变化」，每批只保留一个当前生效结论，规则变化全程可追溯。</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head"><h2>新建复算批次</h2><span>同输入同规则重试不新增版本</span></div>
+        <div class="panel__body toolbar">
+          <label>业务批次号 <input id="batch_ref" value="B-2026-10" aria-label="业务批次号"></label>
+          <select id="sample" aria-label="样例">
+            <option value="month_legacy.csv">十月刷卡批（旧规则窗·含待补录）</option>
+            <option value="month_corrected.csv">十月批·补录纠错版</option>
+            <option value="dirty.csv">早班换乘·脏批</option>
+            <option value="clean.csv">常规刷卡批</option>
+            <option value="legacy.csv">旧编码刷卡批</option>
+          </select>
+          <select id="rule_mode" aria-label="规则适用">
+            <option value="as_of">按乘车时规则原样重现（原账）</option>
+            <option value="current" selected>按当前规则重出（复算）</option>
+          </select>
+          <input type="file" id="file" accept=".csv" aria-label="上传CSV">
+          <input id="change_note" placeholder="变化原因 / 留痕说明" aria-label="变化原因">
+          <button id="run" class="primary">提交复算</button>
+          <span id="feedback" role="status"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head"><h2>业务批次</h2><span class="tag" id="batch-count">{{batches|length}} 批</span></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>业务批次</th><th>账本版本</th><th>当前规则</th><th>复核</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="batch-list">
+              {% for b in batches %}
+              <tr>
+                <td><code>{{b.batch_ref}}</code></td>
+                <td>{{b.ledger_versions}}</td>
+                <td>{{b.current_rule_version}}</td>
+                <td>{{b.decision}}</td>
+                <td>{% if b.sealed %}<span class="seal">已封存</span>{% else %}<span class="open">未封存</span>{% endif %}</td>
+                <td><button class="link" data-ref="{{b.batch_ref}}">打开对照</button></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="empty">暂无批次，先在上方提交一次复算。</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div id="detail" hidden>
+        <section class="panel">
+          <div class="panel__head">
+            <h2>批次 <code id="d-ref"></code> · 版本链与当前结论</h2>
+            <span id="d-sealed"></span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>版本</th><th>类型</th><th>规则版本</th><th>输入摘要(前8)</th><th>对平</th><th>变化原因</th><th>当前生效</th><th>操作</th></tr></thead>
+              <tbody id="version-list"></tbody>
+            </table>
+          </div>
+          <div class="panel__body toolbar">
+            <button id="btn-verify">校验复算链</button>
+            <button id="btn-seal" class="primary">封存日结</button>
+            <a id="btn-archive" class="btn" href="#">导出当前证据CSV</a>
+            <span id="chain-status" role="status"></span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__head"><h2>规则变化说明</h2><span id="rule-diff-meta"></span></div>
+          <div class="panel__body"><div id="rule-diff" class="rule-diff"></div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__head"><h2>同一来源对照：原账 / 复算账 / 变化原因</h2><span id="cmp-summary"></span></div>
+          <div class="panel__body">
+            <div class="kpis" id="cmp-kpis"></div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>事件</th><th>来源行</th><th>原账结论</th><th>原账应扣</th><th>复算结论</th><th>复算应扣</th><th>输入变化</th><th>规则变化</th><th>变化原因</th></tr></thead>
+              <tbody id="compare-list"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="statusbar">
+      <span>原账冻结 · 复算留痕 · 未对平不封存 · 留档防断链</span>
+      <span>Asia/Shanghai · CNY</span>
+    </footer>
+  </div>
+</div>
+<script>window.currentRule={{current_rule|tojson}};</script>
+<script src="/static/recalc.js"></script>
+</body>
+</html>
